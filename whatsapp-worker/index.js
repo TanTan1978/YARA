@@ -1,7 +1,6 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
 import QRCode from 'qrcode';
 import { createClient } from '@supabase/supabase-js';
 import makeWASocket, {
@@ -100,7 +99,7 @@ async function storeIncomingMessage(message) {
   };
 
   const { error } = await db.from('group_messages').upsert(row, {
-    onConflict: 'external_message_id',
+    onConflict: 'group_id,external_message_id',
     ignoreDuplicates: true
   });
   if (error) throw error;
@@ -204,17 +203,32 @@ small{color:#aaa;line-height:1.5}.status{margin-top:14px;color:#e4ca91;white-spa
 <input id="token" type="password" autocomplete="off" placeholder="YARA_APP_TOKEN">
 <button id="check">Check connection / show QR</button>
 <div id="status" class="status">Waiting for owner authentication.</div><img id="qr" hidden alt="WhatsApp linked-device QR">
-<small>Scan only with the dedicated YARA WhatsApp number. Never share this page, QR, or token. This service is read-only and stores only text from explicitly enabled groups.</small></main>
+<button id="discover" type="button">Discover my WhatsApp groups</button><div id="groups"></div>
+<small>Scan only with the dedicated YARA WhatsApp number. Never share this page, QR, or token. Select only groups whose members have been informed and authorized. This service is read-only and stores only text from selected groups.</small></main>
 <script>
 const token=document.getElementById('token'),status=document.getElementById('status'),qr=document.getElementById('qr');
+async function api(url,options={}) {
+ const response=await fetch(url,{...options,headers:{Authorization:'Bearer '+token.value,'Content-Type':'application/json',...(options.headers||{})}});
+ const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data;
+}
 document.getElementById('check').onclick=async()=>{
  status.textContent='Checking…';qr.hidden=true;
  try{
-  const r=await fetch('/api/pair',{headers:{Authorization:'Bearer '+token.value}});
-  const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');
+  const d=await api('/api/pair');
   status.textContent='Connection: '+d.connection_state+(d.last_error?'\\n'+d.last_error:'');
   if(d.qr_data_url){qr.src=d.qr_data_url;qr.hidden=false}
  }catch(e){status.textContent=e.message}
+};
+document.getElementById('discover').onclick=async()=>{
+ const box=document.getElementById('groups');box.textContent='Loading groups…';
+ try{
+  const d=await api('/api/discover-groups');
+  box.innerHTML=d.groups.map(g=>'<label style="display:block;padding:10px;border-top:1px solid #444"><input type="checkbox" data-jid="'+g.jid+'" data-name="'+String(g.name).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'" '+(g.enabled?'checked':'')+' style="width:auto"> '+String(g.name).replace(/</g,'&lt;')+'</label>').join('')||'No groups found.';
+  box.querySelectorAll('input[type=checkbox]').forEach(el=>el.addEventListener('change',async()=>{
+   try{await api('/api/groups/select',{method:'POST',body:JSON.stringify({group_jid:el.dataset.jid,group_name:el.dataset.name,enabled:el.checked})});}
+   catch(e){el.checked=!el.checked;status.textContent=e.message}
+  }));
+ }catch(e){box.textContent=e.message}
 };
 </script></html>`);
 });
@@ -233,6 +247,51 @@ app.get('/api/pair', requireToken, async (_req, res) => {
   let qrDataUrl = null;
   if (currentQr) qrDataUrl = await QRCode.toDataURL(currentQr, { margin: 1, width: 320 });
   res.json({ connection_state: connectionState, qr_data_url: qrDataUrl, last_error: lastError });
+});
+
+app.get('/api/discover-groups', requireToken, async (_req, res) => {
+  if (!socket || connectionState !== 'connected') {
+    return res.status(409).json({ error: 'WhatsApp is not connected yet' });
+  }
+  try {
+    const participating = await socket.groupFetchAllParticipating();
+    const { data: saved, error } = await db.from('whatsapp_groups')
+      .select('external_group_id, is_active, auto_read_enabled')
+      .eq('owner_id', OWNER_ID);
+    if (error) throw error;
+    const savedMap = new Map((saved || []).map(g => [g.external_group_id, g]));
+    const groups = Object.entries(participating || {}).map(([jid, meta]) => {
+      const row = savedMap.get(jid);
+      return {
+        jid,
+        name: meta.subject || 'WhatsApp group',
+        enabled: Boolean(row?.is_active && row?.auto_read_enabled)
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ groups });
+  } catch (error) {
+    res.status(502).json({ error: 'Could not discover groups: ' + (error?.name || 'Error') });
+  }
+});
+
+app.post('/api/groups/select', requireToken, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database is not configured' });
+  const jid = String(req.body?.group_jid || '');
+  const name = String(req.body?.group_name || '').slice(0, 120);
+  const enabled = req.body?.enabled === true;
+  if (!jid.endsWith('@g.us') || !name) {
+    return res.status(400).json({ error: 'A valid discovered group and name are required' });
+  }
+  const { data, error } = await db.from('whatsapp_groups').upsert({
+    owner_id: OWNER_ID,
+    external_group_id: jid,
+    group_name: name,
+    is_active: enabled,
+    auto_read_enabled: enabled,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'owner_id,external_group_id' }).select('id, group_name, is_active').single();
+  if (error) return res.status(502).json({ error: 'Could not update group selection' });
+  res.json({ ok: true, group: data });
 });
 
 app.get('/api/groups', requireToken, async (_req, res) => {
