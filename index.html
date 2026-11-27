@@ -3,31 +3,117 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YARA AI</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
 <style>
-:root{--bg:#0b0c0f;--panel:#14161b;--line:#292c33;--gold:#d8b978;--muted:#9a9da6;--white:#f4f1e9}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0%,#27231b 0,transparent 28%),var(--bg);color:var(--white);font:15px system-ui,-apple-system,sans-serif}
-header{height:76px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 5vw}
-.brand{font-size:22px;letter-spacing:3px;font-weight:700}.brand span{color:var(--gold)}.pill{border:1px solid #554a34;border-radius:30px;padding:8px 13px;color:var(--gold);font-size:12px}
-main{max-width:1100px;margin:42px auto;padding:0 22px}.eyebrow{color:var(--gold);letter-spacing:2px;font-size:11px;text-transform:uppercase}
-h1{font-size:clamp(30px,6vw,48px);margin:10px 0 8px}.sub{color:var(--muted);margin:0 0 28px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.card{background:linear-gradient(145deg,#191b20,#111317);border:1px solid var(--line);border-radius:17px;padding:21px;min-height:125px}
-.k{color:var(--muted);font-size:12px}.v{font-size:27px;margin-top:12px;color:var(--gold)}.wide{margin-top:18px}.status{display:inline-block;width:8px;height:8px;border-radius:50%;background:#c69d53;margin-right:8px}
-.notice{margin-top:18px;border:1px solid #5b4930;background:#211c14;color:#e4d5b6;border-radius:14px;padding:17px;line-height:1.6}
-footer{color:#737781;font-size:12px;margin:30px 0}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.card{min-height:100px}main{margin:30px auto}}
-</style></head>
+:root{--bg:#0b0c0f;--panel:#15171c;--panel2:#1b1d23;--line:#30323a;--gold:#d8b978;--gold2:#f0d9a5;--muted:#a5a6ad;--white:#f7f3ea;--red:#e18c83;--green:#8dc7a2}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 88% 0%,#292318 0,transparent 28%),var(--bg);color:var(--white);font:15px system-ui,-apple-system,sans-serif}
+header{height:72px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 max(22px,5vw);position:sticky;top:0;background:#0b0c0fee;backdrop-filter:blur(12px);z-index:5}
+.brand{font-size:22px;letter-spacing:3px;font-weight:750}.brand span{color:var(--gold)}.topright{display:flex;gap:12px;align-items:center}.pill{border:1px solid #665638;border-radius:30px;padding:7px 12px;color:var(--gold);font-size:11px;letter-spacing:1px}
+button,input,select{font:inherit}button{cursor:pointer;border:1px solid #75613d;background:linear-gradient(135deg,#dfc58e,#b99250);color:#17130c;border-radius:10px;padding:10px 15px;font-weight:700}button.secondary{background:#202127;border-color:var(--line);color:var(--white)}button.danger{background:#2b1b1b;border-color:#74413d;color:#f0b0a8}button:disabled{opacity:.5;cursor:not-allowed}
+main{max-width:1120px;margin:35px auto;padding:0 22px}.eyebrow{color:var(--gold);letter-spacing:2px;font-size:11px;text-transform:uppercase}h1{font-size:clamp(30px,5vw,43px);margin:8px 0}.sub{color:var(--muted);margin:0 0 24px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:linear-gradient(145deg,#1a1c21,#121419);border:1px solid var(--line);border-radius:16px;padding:20px}.metric{color:var(--muted);font-size:12px}.number{font-size:28px;color:var(--gold);margin-top:10px}.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:15px;margin-top:16px}.sectionhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px}.sectionhead h2{font-size:18px;margin:0}.field{display:grid;gap:6px;margin:11px 0}.field label{font-size:12px;color:var(--muted)}input,select{width:100%;background:#0e1014;border:1px solid #383a42;color:var(--white);border-radius:9px;padding:11px}input:focus,select:focus{outline:1px solid var(--gold)}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.row input{flex:1;min-width:150px}.item{padding:13px 0;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}.itemname{font-weight:650}.small{font-size:12px;color:var(--muted);line-height:1.5}.status{padding:12px 14px;border:1px solid #665638;background:#211c14;color:#e8d9b8;border-radius:12px;line-height:1.55;margin-top:15px}.notice{padding:10px 12px;border-radius:9px;background:#202127;color:var(--muted);font-size:12px;line-height:1.5;margin-top:12px}.hidden{display:none!important}.auth{max-width:440px;margin:70px auto}.auth .card{padding:26px}.auth h1{font-size:30px}.message{min-height:20px;color:var(--gold2);font-size:13px;margin-top:10px}.summary{white-space:pre-wrap;line-height:1.6;color:#e7e1d5}.tag{font-size:10px;color:var(--gold);border:1px solid #665638;padding:4px 7px;border-radius:20px}
+footer{color:#737781;font-size:12px;margin:30px 0 50px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.layout{grid-template-columns:1fr}main{margin:25px auto}.pill{display:none}header{height:64px}}
+</style>
+</head>
 <body>
-<header><div class="brand">YARA <span>AI</span></div><div class="pill">PRIVATE BETA · CHAMPAGNE GOLD</div></header>
-<main>
-<div class="eyebrow">Your conversations, clearly understood</div>
-<h1>Welcome to YARA</h1>
-<p class="sub">Arabic & English conversation intelligence dashboard</p>
-<section class="grid">
-<div class="card"><div class="k">CONNECTED GROUPS</div><div class="v">—</div></div>
-<div class="card"><div class="k">MESSAGES RECEIVED</div><div class="v">—</div></div>
-<div class="card"><div class="k">LATEST SUMMARY</div><div class="v">—</div></div>
+<header><div class="brand">YARA <span>AI</span></div><div class="topright"><span class="pill">CHAMPAGNE GOLD · PRIVATE BETA</span><button id="logoutBtn" class="secondary hidden">Sign out</button></div></header>
+<section id="authView" class="auth">
+ <div class="card"><div class="eyebrow">Your conversations, clearly understood</div><h1>Welcome to YARA</h1><p class="sub">Sign in or create your private account.</p>
+  <div class="field"><label>Email</label><input id="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+  <div class="field"><label>Password</label><input id="password" type="password" autocomplete="current-password" placeholder="At least 8 characters"></div>
+  <div class="row"><button id="signInBtn">Sign in</button><button id="signUpBtn" class="secondary">Create account</button></div><div id="authMessage" class="message"></div>
+  <div class="notice">Your account is private. Use your own email and password. Never share your password or verification link.</div>
+ </div>
 </section>
-<section class="card wide"><div class="eyebrow">System status</div><p><span class="status"></span>Initial service scaffold — integration pending</p><p class="k">Database foundation is prepared. Live WhatsApp group access and AI summaries are not enabled yet.</p></section>
-<div class="notice"><strong>Setup in progress</strong><br>YARA is being prepared. Group connections will only be enabled through an officially supported and authorized integration. No group messages are being read by this page.</div>
-<footer>YARA AI · Private by design · Arabic / English</footer>
-</main></body></html>
+<main id="appView" class="hidden">
+ <div class="eyebrow">Your private workspace</div><h1>YARA Dashboard</h1><p class="sub">Arabic & English group conversation intelligence</p>
+ <section class="grid">
+  <div class="card"><div class="metric">CONNECTED GROUPS</div><div class="number" id="groupCount">0</div></div>
+  <div class="card"><div class="metric">MESSAGES STORED</div><div class="number" id="messageCount">0</div></div>
+  <div class="card"><div class="metric">SAVED SUMMARIES</div><div class="number" id="summaryCount">0</div></div>
+ </section>
+ <div class="layout">
+  <section class="card"><div class="sectionhead"><h2>WhatsApp groups</h2><span class="tag">MANUAL SETUP</span></div>
+   <form id="groupForm"><div class="row"><input id="groupName" maxlength="120" placeholder="Group name" required><button type="submit">Add group</button></div></form>
+   <div id="groupsList" class="small" style="margin-top:12px">Loading groups…</div>
+   <div class="notice">Adding a group here only creates its record in YARA. It does not connect to WhatsApp or read messages. Official WhatsApp group integration is a separate next phase.</div>
+  </section>
+  <section class="card"><div class="sectionhead"><h2>Summary preferences</h2><span class="tag">YOUR SETTINGS</span></div>
+   <form id="prefsForm">
+    <div class="field"><label>Summary schedule</label><select id="schedule"><option value="both">Scheduled + On demand</option><option value="scheduled">Scheduled only</option><option value="on_demand">On demand only</option></select></div>
+    <div class="field"><label>Summary language</label><select id="language"><option value="both">Arabic + English (auto)</option><option value="ar">Arabic</option><option value="en">English</option></select></div>
+    <div class="field"><label>Daily summary time (Saudi time)</label><input id="summaryTime" type="time" value="20:00"></div>
+    <button type="submit">Save preferences</button><div id="prefsMessage" class="message"></div>
+   </form>
+  </section>
+ </div>
+ <section class="card" style="margin-top:15px"><div class="sectionhead"><h2>Latest summaries</h2><span class="tag">HISTORY</span></div><div id="summariesList" class="small">No summaries yet.</div></section>
+ <div class="status"><strong>Current build status</strong><br>Account sign-in, private group records, and summary preferences are connected to the YARA database. WhatsApp message ingestion, AI summarization, and automatic scheduling are not active yet.</div>
+ <footer>YARA AI · Private by design · Asia/Riyadh</footer>
+</main>
+<script>
+const SUPABASE_URL = "https://ozxwtxichibzotcpknmh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_cxahcDN-6LLeMOQpuYBGvA_94MsgsFo";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+let currentUser = null;
+function say(id,msg){$(id).textContent=msg}
+function safe(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function showSession(session){
+ currentUser=session?.user||null;
+ $("authView").classList.toggle("hidden",!!currentUser);
+ $("appView").classList.toggle("hidden",!currentUser);
+ $("logoutBtn").classList.toggle("hidden",!currentUser);
+ if(currentUser) await loadDashboard();
+}
+async function auth(action){
+ const email=$("email").value.trim(),password=$("password").value;
+ if(!email||!password){say("authMessage","Enter your email and password.");return}
+ say("authMessage","Please wait…");
+ const result= action==="in"
+  ? await sb.auth.signInWithPassword({email,password})
+  : await sb.auth.signUp({email,password});
+ if(result.error){say("authMessage",result.error.message);return}
+ if(action==="up"&&!result.data.session){say("authMessage","Account created. Check your email to confirm, then sign in.");return}
+ say("authMessage",action==="up"?"Account created.":"Signed in.");
+ await showSession(result.data.session);
+}
+$("signInBtn").addEventListener("click",()=>auth("in"));
+$("signUpBtn").addEventListener("click",()=>auth("up"));
+$("logoutBtn").addEventListener("click",async()=>{await sb.auth.signOut();await showSession(null)});
+async function loadDashboard(){
+ const uid=currentUser.id;
+ const [groups,msgs,sums,prefs]=await Promise.all([
+  sb.from("whatsapp_groups").select("id,group_name,is_active,auto_read_enabled,created_at").eq("owner_id",uid).order("created_at",{ascending:false}),
+  sb.from("group_messages").select("id",{count:"exact",head:true}).eq("owner_id",uid),
+  sb.from("summaries").select("id,summary_text,language,summary_type,created_at,group_id").eq("owner_id",uid).order("created_at",{ascending:false}).limit(5),
+  sb.from("user_preferences").select("summary_schedule,summary_language,daily_summary_time,timezone").eq("user_id",uid).maybeSingle()
+ ]);
+ if(groups.error||msgs.error||sums.error||prefs.error){console.error(groups.error||msgs.error||sums.error||prefs.error);return}
+ $("groupCount").textContent=groups.data.length;
+ $("messageCount").textContent=msgs.count??0;
+ $("summaryCount").textContent=sums.data.length;
+ $("groupsList").innerHTML=groups.data.length?groups.data.map(g=>'<div class="item"><div><div class="itemname">'+safe(g.group_name)+'</div><div class="small">'+(g.is_active?"Active":"Paused")+' · WhatsApp link pending</div></div><button class="danger" data-remove="'+g.id+'" type="button">Remove</button></div>').join(""):'No groups added yet.';
+ $("groupsList").querySelectorAll("[data-remove]").forEach(b=>b.addEventListener("click",()=>removeGroup(b.dataset.remove)));
+ $("summariesList").innerHTML=sums.data.length?sums.data.map(s=>'<div class="item"><div><div class="itemname">'+safe(s.summary_type==="scheduled"?"Scheduled":"On demand")+' · '+safe(s.language.toUpperCase())+'</div><div class="summary small">'+safe(s.summary_text)+'</div><div class="small">'+new Date(s.created_at).toLocaleString()+'</div></div></div>').join(""):'No summaries yet. They will appear here when the summarization service is enabled.';
+ if(prefs.data){$("schedule").value=prefs.data.summary_schedule;$("language").value=prefs.data.summary_language;$("summaryTime").value=String(prefs.data.daily_summary_time||"20:00").slice(0,5)}
+}
+$("groupForm").addEventListener("submit",async e=>{
+ e.preventDefault();const name=$("groupName").value.trim();if(!name)return;
+ const {error}=await sb.from("whatsapp_groups").insert({owner_id:currentUser.id,group_name:name,auto_read_enabled:true});
+ if(error){alert(error.message);return}$("groupName").value="";await loadDashboard();
+});
+async function removeGroup(id){
+ if(!confirm("Remove this group record from YARA?"))return;
+ const {error}=await sb.from("whatsapp_groups").delete().eq("id",id).eq("owner_id",currentUser.id);
+ if(error){alert(error.message);return}await loadDashboard();
+}
+$("prefsForm").addEventListener("submit",async e=>{
+ e.preventDefault();say("prefsMessage","Saving…");
+ const {error}=await sb.from("user_preferences").upsert({user_id:currentUser.id,summary_schedule:$("schedule").value,summary_language:$("language").value,daily_summary_time:$("summaryTime").value,timezone:"Asia/Riyadh"},{onConflict:"user_id"});
+ say("prefsMessage",error?error.message:"Preferences saved successfully.");
+});
+sb.auth.onAuthStateChange((_event,session)=>{showSession(session)});
+sb.auth.getSession().then(({data})=>showSession(data.session));
+</script>
+</body></html>
