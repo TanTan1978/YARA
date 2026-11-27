@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YARA AI</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--bg:#0b0c0f;--panel:#15171c;--panel2:#1b1d23;--line:#30323a;--gold:#d8b978;--gold2:#f0d9a5;--muted:#a5a6ad;--white:#f7f3ea;--red:#e18c83;--green:#8dc7a2}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 88% 0%,#292318 0,transparent 28%),var(--bg);color:var(--white);font:15px system-ui,-apple-system,sans-serif}
@@ -32,6 +33,24 @@ footer{color:#737781;font-size:12px;margin:30px 0 50px}
   <div class="card"><div class="metric">MESSAGES STORED</div><div class="number" id="messageCount">0</div></div>
   <div class="card"><div class="metric">SAVED SUMMARIES</div><div class="number" id="summaryCount">0</div></div>
  </section>
+ 
+ <section class="card" style="margin:16px 0">
+  <div class="sectionhead"><h2>Import WhatsApp chat</h2><span class="tag">LOCAL PREVIEW</span></div>
+  <p class="small">Choose a WhatsApp TXT export, or a ZIP export that contains the TXT file. The file is read in this browser for preview; it is not uploaded or sent to an AI service.</p>
+  <div class="field"><label>WhatsApp export file</label><input id="chatFile" type="file" accept=".txt,.zip,text/plain,application/zip"></div>
+  <div class="row"><button id="previewImportBtn" type="button">Read and preview</button><button id="clearImportBtn" class="secondary" type="button">Clear preview</button></div>
+  <div id="importMessage" class="message" aria-live="polite"></div>
+  <div id="importResults" class="hidden">
+   <div class="grid" style="margin-top:12px">
+    <div class="card"><div class="metric">MESSAGES FOUND</div><div class="number" id="importMessageCount">0</div></div>
+    <div class="card"><div class="metric">MEDIA REFERENCES</div><div class="number" id="importMediaCount">0</div></div>
+    <div class="card"><div class="metric">TEXT FILE</div><div class="number" id="importTextName" style="font-size:15px;overflow-wrap:anywhere">—</div></div>
+   </div>
+   <div class="notice">This first import step only checks and previews the export. AI summaries, media analysis, and saving imported messages are not active yet.</div>
+   <div id="importPreview" style="max-height:340px;overflow:auto;margin-top:12px"></div>
+  </div>
+ </section>
+
  <div class="layout">
   <section class="card"><div class="sectionhead"><h2>WhatsApp groups</h2><span class="tag">MANUAL SETUP</span></div>
    <form id="groupForm"><div class="row"><input id="groupName" maxlength="120" placeholder="Group name" required><button type="submit">Add group</button></div></form>
@@ -81,6 +100,63 @@ async function auth(action){
 $("signInBtn").addEventListener("click",()=>auth("in"));
 $("signUpBtn").addEventListener("click",()=>auth("up"));
 $("logoutBtn").addEventListener("click",async()=>{await sb.auth.signOut();await showSession(null)});
+
+function parseWhatsAppExport(raw){
+ const lines=String(raw||"").replace(/^\\uFEFF/,"").split(/\\r?\\n/);
+ const out=[]; let current=null;
+ const patterns=[
+  /^\\[?(\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}),?\\s+(\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:AM|PM|am|pm)?)\\]?\\s*[-:]\\s*(.*)$/,
+  /^(\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}),?\\s+(\\d{1,2}:\\d{2}(?::\\d{2})?\\s*(?:AM|PM|am|pm)?)\\s+-\\s+(.*)$/
+ ];
+ for(const line of lines){
+  let m=null; for(const re of patterns){m=line.match(re);if(m)break}
+  if(m){
+   if(current)out.push(current);
+   const rest=m[3]||""; const split=rest.match(/^([^:]{1,100}):\\s?([\\s\\S]*)$/);
+   current={date:m[1],time:m[2].trim(),sender:split?split[1].trim():"",text:split?split[2]:rest};
+  }else if(current){current.text+=(current.text?"\\n":"")+line}
+ }
+ if(current)out.push(current);
+ return out;
+}
+function renderImportPreview(messages){
+ const target=$("importPreview");
+ target.innerHTML=messages.slice(0,80).map(m=>'<div class="item" style="display:block"><div class="itemname">'+safe(m.sender||"System")+' <span class="small">· '+safe(m.date)+' '+safe(m.time)+'</span></div><div class="summary small">'+safe(m.text)+'</div></div>').join("");
+ if(messages.length>80)target.insertAdjacentHTML("beforeend",'<div class="notice">Showing first 80 of '+messages.length+' messages.</div>');
+}
+$("previewImportBtn").addEventListener("click",async()=>{
+ const file=$("chatFile").files[0]; if(!file){say("importMessage","Choose a TXT or ZIP export first.");return}
+ if(file.size>50*1024*1024){say("importMessage","For this preview, the file limit is 50 MB.");return}
+ say("importMessage","Reading export locally…");
+ try{
+  let txtFile=null,mediaCount=0;
+  if(file.name.toLowerCase().endsWith(".zip")){
+   if(!window.JSZip)throw new Error("ZIP reader did not load. Refresh the page and try again.");
+   const zip=await JSZip.loadAsync(file,{checkCRC32:true});
+   const candidates=Object.values(zip.files).filter(f=>!f.dir&&f.name.toLowerCase().endsWith(".txt"));
+   if(!candidates.length)throw new Error("No TXT chat file was found inside this ZIP.");
+   txtFile=candidates.sort((a,b)=>a.name.split("/").length-b.name.split("/").length)[0];
+   mediaCount=Object.values(zip.files).filter(f=>!f.dir&&!f.name.toLowerCase().endsWith(".txt")).length;
+   const raw=await txtFile.async("string"); showImport(raw,txtFile.name,mediaCount);
+  }else{
+   const raw=await file.text(); showImport(raw,file.name,0);
+  }
+ }catch(err){say("importMessage",err.message||"Could not read this export.");}
+});
+function showImport(raw,name,mediaCount){
+ const messages=parseWhatsAppExport(raw);
+ if(!messages.length){say("importMessage","The file opened, but its message format was not recognized. No data was uploaded.");return}
+ $("importMessageCount").textContent=messages.length;
+ $("importMediaCount").textContent=mediaCount;
+ $("importTextName").textContent=name.split("/").pop();
+ renderImportPreview(messages);
+ $("importResults").classList.remove("hidden");
+ say("importMessage","Preview ready. The file stayed in your browser; nothing was uploaded.");
+}
+$("clearImportBtn").addEventListener("click",()=>{
+ $("chatFile").value="";$("importResults").classList.add("hidden");$("importPreview").innerHTML="";say("importMessage","Preview cleared.");
+});
+
 async function loadDashboard(){
  const uid=currentUser.id;
  const [groups,msgs,sums,prefs]=await Promise.all([
