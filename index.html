@@ -3,7 +3,54 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YARA AI</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0">
+// Local WhatsApp export preview. No file bytes are uploaded or persisted.
+const MAX_INPUT_BYTES = 50 * 1024 * 1024;
+function parseWhatsAppText(text){
+ const lines=text.replace(/^\\uFEFF/,"").split(/\\r?\\n/);
+ const starts=/^(?:\\[)?(\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4},?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s?[AP]M)?)(?:\\])?\\s+-\\s+/;
+ const messages=[]; let current=null;
+ for(const line of lines){
+  const m=line.match(starts);
+  if(m){if(current)messages.push(current);current={time:m[1],text:line.slice(m[0].length)}}
+  else if(current) current.text+="\\n"+line;
+ }
+ if(current)messages.push(current);
+ return messages;
+}
+async function previewWhatsAppExport(){
+ const file=$("chatFile").files[0]; if(!file){say("importMessage","Choose a TXT or ZIP export first.");return}
+ if(file.size>MAX_INPUT_BYTES){say("importMessage","File is larger than the 50 MB preview limit.");return}
+ say("importMessage","Reading file locally…");
+ try{
+  let txt="",media=[];
+  if(file.name.toLowerCase().endsWith(".txt")) txt=await file.text();
+  else if(file.name.toLowerCase().endsWith(".zip")){
+   if(!window.JSZip){await new Promise((resolve,reject)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";s.onload=resolve;s.onerror=reject;document.head.appendChild(s)})}
+   const zip=await JSZip.loadAsync(file,{checkCRC32:false});
+   const entries=Object.values(zip.files).filter(x=>!x.dir);
+   if(entries.length>5000) throw new Error("ZIP contains too many files (limit 5,000).");
+   const textFiles=entries.filter(x=>/\\.txt$/i.test(x.name));
+   media=entries.filter(x=>! /\\.txt$/i.test(x.name)).map(x=>x.name);
+   if(!textFiles.length) throw new Error("No TXT chat file was found inside this ZIP.");
+   if(textFiles.length>1) throw new Error("More than one TXT file was found. Please upload the chat TXT separately for this preview.");
+   const entry=textFiles[0];
+   const blob=await entry.async("blob");
+   if(blob.size>100*1024*1024) throw new Error("Extracted TXT exceeds the 100 MB limit.");
+   txt=await blob.text();
+  } else throw new Error("Unsupported file type. Please choose TXT or ZIP.");
+  const messages=parseWhatsAppText(txt);
+  $("importPreview").classList.remove("hidden");
+  $("importMessageCount").textContent=messages.length;
+  $("importMediaCount").textContent=media.length;
+  $("importFileName").textContent=file.name;
+  $("importSamples").textContent=messages.slice(0,12).map(m=>m.time+" — "+m.text).join("\\n\\n") || "No standard WhatsApp timestamped messages were detected. The export format may need adjustment.";
+  say("importMessage","Preview created locally. No data has been uploaded or saved.");
+ }catch(e){$("importPreview").classList.add("hidden");say("importMessage","Could not read export: "+e.message)}
+}
+if($("previewImportBtn")) $("previewImportBtn").addEventListener("click",previewWhatsAppExport);
+if($("clearImportBtn")) $("clearImportBtn").addEventListener("click",()=>{$("chatFile").value="";$("importPreview").classList.add("hidden");say("importMessage","")});
+\n</script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--bg:#0b0c0f;--panel:#15171c;--panel2:#1b1d23;--line:#30323a;--gold:#d8b978;--gold2:#f0d9a5;--muted:#a5a6ad;--white:#f7f3ea;--red:#e18c83;--green:#8dc7a2}
@@ -66,7 +113,24 @@ footer{color:#737781;font-size:12px;margin:30px 0 50px}
    </form>
   </section>
  </div>
- <section class="card" style="margin-top:15px"><div class="sectionhead"><h2>Latest summaries</h2><span class="tag">HISTORY</span></div><div id="summariesList" class="small">No summaries yet.</div></section>
+
+ <section class="card" style="margin-top:15px" id="importPanel">
+  <div class="sectionhead"><h2>Import WhatsApp chat</h2><span class="tag">LOCAL PREVIEW</span></div>
+  <p class="small">Choose a WhatsApp TXT export or ZIP export. The first version reads the chat text in your browser and previews the messages before any upload. Media files are listed, not yet analyzed.</p>
+  <div class="field"><label>Chat export (.txt or .zip)</label><input id="chatFile" type="file" accept=".txt,.zip,text/plain,application/zip"></div>
+  <div class="row"><button id="previewImportBtn" type="button">Read and preview</button><button id="clearImportBtn" class="secondary" type="button">Clear</button></div>
+  <div id="importMessage" class="message" aria-live="polite"></div>
+  <div id="importPreview" class="hidden">
+   <div class="grid" style="margin-top:12px">
+    <div class="card"><div class="metric">MESSAGES FOUND</div><div class="number" id="importMessageCount">0</div></div>
+    <div class="card"><div class="metric">MEDIA FILES FOUND</div><div class="number" id="importMediaCount">0</div></div>
+    <div class="card"><div class="metric">CHAT FILE</div><div class="number" style="font-size:16px" id="importFileName">—</div></div>
+   </div>
+   <div class="field"><label>Preview of extracted messages</label><div id="importSamples" class="summary small" style="max-height:260px;overflow:auto;background:#0e1014;padding:12px;border-radius:9px"></div></div>
+   <div class="notice">This is a local preview only. Nothing has been saved or sent to an AI service. ZIP media analysis, secure cloud storage, and AI summaries are not enabled yet.</div>
+  </div>
+ </section>
+\n <section class="card" style="margin-top:15px"><div class="sectionhead"><h2>Latest summaries</h2><span class="tag">HISTORY</span></div><div id="summariesList" class="small">No summaries yet.</div></section>
  <div class="status"><strong>Current build status</strong><br>Account sign-in, private group records, and summary preferences are connected to the YARA database. WhatsApp message ingestion, AI summarization, and automatic scheduling are not active yet.</div>
  <footer>YARA AI · Private by design · Asia/Riyadh</footer>
 </main>
