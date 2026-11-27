@@ -7,13 +7,13 @@
 // Local WhatsApp export preview. No file bytes are uploaded or persisted.
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 function parseWhatsAppText(text){
- const lines=text.replace(/^\\uFEFF/,"").split(/\\r?\\n/);
- const starts=/^(?:\\[)?(\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4},?\\s+\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s?[AP]M)?)(?:\\])?\\s+-\\s+/;
+ const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/);
+ const starts=/^(?:\[)?(\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4},?\s+\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)(?:\])?\s+-\s+/;
  const messages=[]; let current=null;
  for(const line of lines){
   const m=line.match(starts);
   if(m){if(current)messages.push(current);current={time:m[1],text:line.slice(m[0].length)}}
-  else if(current) current.text+="\\n"+line;
+  else if(current) current.text+="\n"+line;
  }
  if(current)messages.push(current);
  return messages;
@@ -30,12 +30,11 @@ async function previewWhatsAppExport(){
    const zip=await JSZip.loadAsync(file,{checkCRC32:false});
    const entries=Object.values(zip.files).filter(x=>!x.dir);
    if(entries.length>5000) throw new Error("ZIP contains too many files (limit 5,000).");
-   const textFiles=entries.filter(x=>/\\.txt$/i.test(x.name));
-   media=entries.filter(x=>! /\\.txt$/i.test(x.name)).map(x=>x.name);
+   const textFiles=entries.filter(x=>/\.txt$/i.test(x.name));
+   media=entries.filter(x=>!/\.txt$/i.test(x.name)).map(x=>x.name);
    if(!textFiles.length) throw new Error("No TXT chat file was found inside this ZIP.");
    if(textFiles.length>1) throw new Error("More than one TXT file was found. Please upload the chat TXT separately for this preview.");
-   const entry=textFiles[0];
-   const blob=await entry.async("blob");
+   const blob=await textFiles[0].async("blob");
    if(blob.size>100*1024*1024) throw new Error("Extracted TXT exceeds the 100 MB limit.");
    txt=await blob.text();
   } else throw new Error("Unsupported file type. Please choose TXT or ZIP.");
@@ -44,13 +43,14 @@ async function previewWhatsAppExport(){
   $("importMessageCount").textContent=messages.length;
   $("importMediaCount").textContent=media.length;
   $("importFileName").textContent=file.name;
-  $("importSamples").textContent=messages.slice(0,12).map(m=>m.time+" — "+m.text).join("\\n\\n") || "No standard WhatsApp timestamped messages were detected. The export format may need adjustment.";
+  $("importSamples").textContent=messages.slice(0,12).map(m=>m.time+" — "+m.text).join("\n\n") || "No standard WhatsApp timestamped messages were detected. The export format may need adjustment.";
   say("importMessage","Preview created locally. No data has been uploaded or saved.");
  }catch(e){$("importPreview").classList.add("hidden");say("importMessage","Could not read export: "+e.message)}
 }
 if($("previewImportBtn")) $("previewImportBtn").addEventListener("click",previewWhatsAppExport);
 if($("clearImportBtn")) $("clearImportBtn").addEventListener("click",()=>{$("chatFile").value="";$("importPreview").classList.add("hidden");say("importMessage","")});
-\n</script>
+
+</script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--bg:#0b0c0f;--panel:#15171c;--panel2:#1b1d23;--line:#30323a;--gold:#d8b978;--gold2:#f0d9a5;--muted:#a5a6ad;--white:#f7f3ea;--red:#e18c83;--green:#8dc7a2}
