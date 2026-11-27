@@ -1,0 +1,19 @@
+{
+  "name": "yara-whatsapp-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "@supabase/supabase-js": "^2.57.0",
+    "express": "^5.1.0",
+    "qrcode": "^1.5.4"
+  }
+}
