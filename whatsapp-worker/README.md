@@ -1,67 +1,74 @@
-# YARA WhatsApp Worker (isolated service)
+# YARA WhatsApp Worker
 
-This service is intentionally isolated under `whatsapp-worker/`. It does not change the existing Python API or dashboard.
+Isolated Node.js service in `whatsapp-worker/`; it does not replace the existing dashboard.
 
-## Important status
+## Safety and status
 
-- WhatsApp connection is **off by default** (`WHATSAPP_ENABLED=false`).
-- This uses the community-maintained Baileys WhatsApp Web protocol library. It is **not an official WhatsApp Business Platform integration**, is not endorsed by WhatsApp, and may disconnect or lead to account restrictions. Use only with the dedicated number and only after reviewing WhatsApp's terms and risks.
-- Pairing must be initiated by the owner locally at the worker's HTTPS `/pair` page. Never send QR codes, pairing codes, auth files, or tokens in chat.
-- The worker is read-only: it has no send-message endpoint or code path.
-- Only group messages from group IDs already registered in `public.whatsapp_groups` for `YARA_OWNER_ID` with both `is_active=true` and `auto_read_enabled=true` are stored.
-- It does not download media, sync full history, or backfill old messages. It stores new text messages received after connection.
-- The existing dashboard does not yet provide a verified WhatsApp group-discovery/selection flow. Register the exact group JIDs only after the account is paired and group discovery is implemented; do not guess group IDs.
+- WhatsApp is **off by default**: `WHATSAPP_ENABLED=false`.
+- Uses the community-maintained Baileys WhatsApp Web protocol, not the official WhatsApp Business Platform. It is unofficial, may disconnect, and may lead to account restrictions. Use only with a dedicated number and after reviewing the risks and applicable terms.
+- Pairing is owner-operated at the worker's HTTPS `/pair` page. Never share QR codes, pairing codes, auth files, or tokens.
+- Read-only: no code path or endpoint sends messages.
+- Only explicitly selected groups are ingested.
+- No full-history sync, no backfill, and no media downloads. Only new incoming text messages are stored.
+- The worker is not an AI summarizer; summaries and schedules are not yet implemented.
 
-## Host requirements
+## Hostless configuration
 
-Use Node.js 20 or newer. The service requires a **persistent writable disk** mounted at `/data` because Baileys authentication and Signal keys must survive worker restarts. Do not deploy with "No disk" unless you first implement and verify another encrypted persistent auth store.
-
-Hostless configuration:
+Create a **Standalone** worker:
 - Repository: `TanTan1978/YARA`
-- Branch: `feature/whatsapp-worker`
+- Branch: `main`
 - Working directory: `/whatsapp-worker`
 - Build system: Detect automatically
-- Command: `npm start`
+- Start command: `npm start`
 - Container port: `8000`
-- Persistent disk: mount at `/data`
-- Size: Small (0.1 vCPU / 256 MiB) is only a smoke-test starting point; memory may need to be increased if the library is unstable or the service restarts.
+- Node.js: 20 or newer
 
-## Required environment variables
+**Persistent storage is mandatory before pairing.** Mount a writable persistent disk at `/data`; authentication keys are stored at `/data/whatsapp-auth`. Do not pair if Hostless cannot provide persistent storage. Do not assume that an ephemeral filesystem survives restarts.
 
-Set these only in Hostless worker secrets. Never commit actual values:
-- `SUPABASE_URL`: the YARA Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY`: server-side Supabase service-role secret; never expose it in the browser
-- `YARA_APP_TOKEN`: long random secret used to protect the pairing/status endpoints
-- `YARA_OWNER_ID`: UUID of the owner's Supabase Auth user
+The Small (0.1 vCPU / 256 MiB) size is only a smoke-test starting point; increase memory if the process restarts or becomes unstable.
+
+## Required server-side environment variables
+
+Set these only in Hostless worker secrets:
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side secret; never use the frontend publishable key)
+- `YARA_APP_TOKEN` (long random secret)
+- `YARA_OWNER_ID` (owner's Supabase Auth UUID)
 - `WHATSAPP_ENABLED=false` until the dedicated line is ready and the owner explicitly approves pairing
 - `AUTH_DIR=/data/whatsapp-auth`
-- `PORT=8000` (Hostless may inject this automatically)
+- `PORT=8000` (if not injected by Hostless)
 
-Do not reuse the frontend publishable key as the service-role key.
+Never commit actual secret values.
 
 ## Endpoints
 
-- `GET /health`: public liveness check; contains no secrets.
-- `GET /pair`: local pairing page. It requires the owner to enter `YARA_APP_TOKEN` in the page.
-- `GET /api/status`: bearer-token protected connection status.
-- `GET /api/pair`: bearer-token protected QR data while pairing is pending.
-- `GET /api/groups`: bearer-token protected list of explicitly registered groups.
+- `GET /health`: public liveness only.
+- `GET /pair`: pairing page; enter the app token locally in the browser.
+- `GET /api/status`: protected status.
+- `GET /api/pair`: protected QR data.
+- `GET /api/discover-groups`: protected group discovery.
+- `POST /api/groups/select`: protect and explicitly enable/disable selected groups.
+- `GET /api/groups`: protected selected-group list.
 
-## Database mapping
+## Database
 
-Uses the existing YARA tables:
+Uses:
 - `whatsapp_groups(owner_id, external_group_id, group_name, is_active, auto_read_enabled)`
 - `group_messages(owner_id, group_id, external_message_id, sender_name, message_text, sent_at)`
 
-The service-role key bypasses RLS, so this service must remain private and its API token must be strong. Rotate secrets immediately if they are exposed.
+The required unique constraints have been verified:
+- `whatsapp_groups(owner_id, external_group_id)`
+- `group_messages(group_id, external_message_id)`
+
+The service-role key bypasses RLS. Keep the worker private and the app token strong.
 
 ## Before enabling
 
-1. Confirm persistent disk is attached and test that a file survives a worker restart.
-2. Set and verify all secrets.
+1. Attach persistent storage at `/data` and verify files survive a restart.
+2. Set all secrets in Hostless only.
 3. Keep `WHATSAPP_ENABLED=false` until the dedicated number is ready.
-4. Implement and test safe group discovery/selection before registering group IDs.
-5. Pair only from the dedicated number's WhatsApp Linked Devices screen.
-6. Verify messages are stored only for selected groups, and verify no outbound messages are possible.
+4. Pair only by scanning the QR locally on the dedicated number.
+5. Discover groups and explicitly select only groups whose members have been informed and authorized.
+6. Verify that only selected groups are stored and that no outbound messages are possible.
 
-Do not treat a running health endpoint as proof that WhatsApp is connected.
+A healthy `/health` response does not mean WhatsApp is connected.
